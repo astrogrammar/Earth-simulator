@@ -178,13 +178,13 @@
   ];
   var axisGeom = new THREE.BufferGeometry().setFromPoints(axisPoints);
   var axisMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
-  tiltGroup.add(new THREE.Line(axisGeom, axisMat));
+  earthMesh.add(new THREE.Line(axisGeom, axisMat));
 
   // ============================================================
   // Continent outlines on Earth
   // ============================================================
   var continentGroup = new THREE.Object3D();
-  tiltGroup.add(continentGroup);
+  earthMesh.add(continentGroup);
 
   function latLonToSphere(lat, lon, radius) {
     var phi = THREE.MathUtils.degToRad(90 - lat);
@@ -212,8 +212,8 @@
   // ============================================================
   var gridGroupFar = new THREE.Object3D();   // 30-degree interval
   var gridGroupNear = new THREE.Object3D();  // 10-degree interval
-  tiltGroup.add(gridGroupFar);
-  tiltGroup.add(gridGroupNear);
+  earthMesh.add(gridGroupFar);
+  earthMesh.add(gridGroupNear);
   gridGroupNear.visible = false;
 
   function createLatLine(latDeg, radius, isEquator) {
