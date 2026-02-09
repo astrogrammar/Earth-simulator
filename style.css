@@ -15,3 +15,57 @@ body {
   height: 100vh;
   touch-action: none;
 }
+
+/* Toggle button */
+#toggle-wrap {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+
+.toggle-label {
+  color: rgba(255, 255, 255, 0.35);
+  font: 600 14px / 1 sans-serif;
+  transition: color 0.3s;
+}
+
+.toggle-label.active {
+  color: #fff;
+}
+
+#toggle-btn {
+  position: relative;
+  width: 48px;
+  height: 26px;
+  border: none;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.3s;
+  outline: none;
+}
+
+#toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+#toggle-btn .thumb {
+  position: absolute;
+  top: 3px;
+  left: 24px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.3s;
+}
+
+#toggle-btn.geo .thumb {
+  left: 4px;
+}

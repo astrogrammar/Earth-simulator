@@ -27,6 +27,8 @@
   var SUN_GLOW_COLOR = 0xffcc00;    // yellow glow
   var AXIS_LENGTH = EARTH_RADIUS * 1.8;  // pole axis extends beyond surface
   var CONTINENT_COLOR = 0x33aa44;
+  var GEO_GRID_SPEED = (2 * Math.PI) / 60; // equatorial grid: 60s per revolution
+  var GEO_GRID_RADIUS = ORBIT_RADIUS * 0.55; // radius of celestial equatorial grid
   var PAN_SPEED = 0.003;
   var ROTATE_SPEED = 0.005;
 
@@ -122,32 +124,42 @@
   scene.add(new THREE.AmbientLight(0x333344, 0.5));
 
   // ============================================================
-  // Sun
+  // Mode state
+  // ============================================================
+  var isGeocentric = false; // false = heliocentric, true = geocentric
+
+  // ============================================================
+  // Heliocentric group (contains sun, orbit, earth, markers)
+  // ============================================================
+  var helioGroup = new THREE.Object3D();
+  scene.add(helioGroup);
+
+  // ============================================================
+  // Sun (shared geometry / materials)
   // ============================================================
   var sunGeom = new THREE.SphereGeometry(SUN_RADIUS, 32, 32);
   var sunMat = new THREE.MeshBasicMaterial({ color: SUN_COLOR_CENTER });
-  var sunMesh = new THREE.Mesh(sunGeom, sunMat);
-  scene.add(sunMesh);
-
-  // Sun glow (slightly larger transparent sphere)
   var glowGeom = new THREE.SphereGeometry(SUN_RADIUS * 1.3, 32, 32);
   var glowMat = new THREE.MeshBasicMaterial({
     color: SUN_GLOW_COLOR,
     transparent: true,
     opacity: 0.25
   });
-  scene.add(new THREE.Mesh(glowGeom, glowMat));
+
+  var sunMesh = new THREE.Mesh(sunGeom, sunMat);
+  helioGroup.add(sunMesh);
+  helioGroup.add(new THREE.Mesh(glowGeom, glowMat));
 
   // Sun light
   var sunLight = new THREE.PointLight(0xffffff, 1.5, 300);
-  scene.add(sunLight);
+  helioGroup.add(sunLight);
 
   // ============================================================
   // Earth pivot & mesh
   // ============================================================
   // orbitPivot rotates around Y to create orbital motion
   var orbitPivot = new THREE.Object3D();
-  scene.add(orbitPivot);
+  helioGroup.add(orbitPivot);
 
   // earthSystem is placed at ORBIT_RADIUS on the X axis of orbitPivot,
   // then tilted by AXIAL_TILT around Z (in orbit-local coords)
@@ -334,7 +346,8 @@
     transparent: true,
     opacity: 0.3
   });
-  scene.add(new THREE.Line(orbitLineGeom, orbitLineMat));
+  var helioOrbitLine = new THREE.Line(orbitLineGeom, orbitLineMat);
+  helioGroup.add(helioOrbitLine);
 
   // ============================================================
   // Seasonal markers on orbital path
@@ -394,12 +407,117 @@
 
     var marker = new THREE.Mesh(markerGeom, markerMat);
     marker.position.set(x, 0, z);
-    scene.add(marker);
+    helioGroup.add(marker);
 
     var sprite = makeTextSprite(sd.label);
     sprite.position.set(x, 5, z);
-    scene.add(sprite);
+    helioGroup.add(sprite);
   });
+
+  // ============================================================
+  // Geocentric group (Earth at center, Sun orbits)
+  // ============================================================
+  var geoGroup = new THREE.Object3D();
+  geoGroup.visible = false;
+  scene.add(geoGroup);
+
+  // --- Geocentric Earth (static at origin) ---
+  var geoTiltGroup = new THREE.Object3D();
+  geoTiltGroup.rotation.z = AXIAL_TILT;
+  geoGroup.add(geoTiltGroup);
+
+  var geoEarthMesh = new THREE.Mesh(earthGeom, earthMat);
+  geoTiltGroup.add(geoEarthMesh);
+
+  // Axis line
+  var geoAxisGeom = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(0, -AXIS_LENGTH, 0),
+    new THREE.Vector3(0, AXIS_LENGTH, 0)
+  ]);
+  geoEarthMesh.add(new THREE.Line(geoAxisGeom, axisMat));
+
+  // Continents (reuse data + helper)
+  var geoContinentGroup = new THREE.Object3D();
+  geoEarthMesh.add(geoContinentGroup);
+  CONTINENT_DATA.forEach(function (outline) {
+    var points = [];
+    outline.forEach(function (coord) {
+      points.push(latLonToSphere(coord[1], coord[0], EARTH_RADIUS * 1.002));
+    });
+    var geom = new THREE.BufferGeometry().setFromPoints(points);
+    geoContinentGroup.add(new THREE.Line(geom, continentMaterial));
+  });
+
+  // --- Geocentric Sun (orbits around origin) ---
+  var geoSunPivot = new THREE.Object3D();
+  geoGroup.add(geoSunPivot);
+
+  var geoSunMesh = new THREE.Mesh(sunGeom, sunMat);
+  geoSunMesh.position.set(ORBIT_RADIUS, 0, 0);
+  geoSunPivot.add(geoSunMesh);
+
+  var geoSunGlow = new THREE.Mesh(glowGeom, glowMat);
+  geoSunGlow.position.set(ORBIT_RADIUS, 0, 0);
+  geoSunPivot.add(geoSunGlow);
+
+  var geoSunLight = new THREE.PointLight(0xffffff, 1.5, 300);
+  geoSunLight.position.set(ORBIT_RADIUS, 0, 0);
+  geoSunPivot.add(geoSunLight);
+
+  // --- Geocentric orbit line (yellow, ecliptic style) ---
+  var geoOrbitMat = new THREE.LineBasicMaterial({
+    color: LINE_COLOR_YELLOW,
+    linewidth: ECLIPTIC_LINE_WIDTH
+  });
+  geoGroup.add(new THREE.Line(orbitLineGeom, geoOrbitMat));
+
+  // --- Equatorial coordinate grid (rotates around Earth) ---
+  var geoEquatorialGrid = new THREE.Object3D();
+  geoTiltGroup.add(geoEquatorialGrid);
+
+  function createCelestialLatLine(latDeg, radius, isEquator) {
+    var segments = 72;
+    var points = [];
+    for (var i = 0; i <= segments; i++) {
+      var lon = (i / segments) * 360 - 180;
+      points.push(latLonToSphere(latDeg, lon, radius));
+    }
+    var geom = new THREE.BufferGeometry().setFromPoints(points);
+    var mat = new THREE.LineBasicMaterial({
+      color: LINE_COLOR_RED,
+      transparent: true,
+      opacity: isEquator ? 0.8 : 0.4,
+      linewidth: isEquator ? EQUATOR_LINE_WIDTH : GRID_LINE_WIDTH
+    });
+    return new THREE.Line(geom, mat);
+  }
+
+  function createCelestialLonLine(lonDeg, radius) {
+    var segments = 72;
+    var points = [];
+    for (var i = 0; i <= segments; i++) {
+      var lat = (i / segments) * 180 - 90;
+      points.push(latLonToSphere(lat, lonDeg, radius));
+    }
+    var geom = new THREE.BufferGeometry().setFromPoints(points);
+    var mat = new THREE.LineBasicMaterial({
+      color: LINE_COLOR_RED,
+      transparent: true,
+      opacity: 0.4,
+      linewidth: GRID_LINE_WIDTH
+    });
+    return new THREE.Line(geom, mat);
+  }
+
+  (function buildCelestialGrid() {
+    var r = GEO_GRID_RADIUS;
+    for (var lat = -90; lat <= 90; lat += 30) {
+      geoEquatorialGrid.add(createCelestialLatLine(lat, r, lat === 0));
+    }
+    for (var lon = -180; lon < 180; lon += 30) {
+      geoEquatorialGrid.add(createCelestialLonLine(lon, r));
+    }
+  })();
 
   // ============================================================
   // Camera Controller (custom, no OrbitControls)
@@ -429,6 +547,23 @@
   }
 
   updateCameraFromSpherical();
+
+  // --- Toggle button handler ---
+  var toggleBtn = document.getElementById('toggle-btn');
+  var labelGeo = document.getElementById('label-geo');
+  var labelHelio = document.getElementById('label-helio');
+
+  toggleBtn.addEventListener('click', function () {
+    isGeocentric = !isGeocentric;
+    helioGroup.visible = !isGeocentric;
+    geoGroup.visible = isGeocentric;
+    toggleBtn.classList.toggle('geo', isGeocentric);
+    labelGeo.classList.toggle('active', isGeocentric);
+    labelHelio.classList.toggle('active', !isGeocentric);
+    // Reset camera target to origin
+    cameraState.target.set(0, 0, 0);
+    updateCameraFromSpherical();
+  });
 
   // --- Mouse events ---
   canvas.addEventListener('mousedown', function (e) {
@@ -471,15 +606,19 @@
 
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
-    var earthWorldPos = new THREE.Vector3();
-    earthMesh.getWorldPosition(earthWorldPos);
-    // Smoothly shift target toward Earth as we zoom in
     var zoomFactor = 1 + e.deltaY * 0.001;
     var newRadius = cameraState.spherical.radius * zoomFactor;
     newRadius = THREE.MathUtils.clamp(newRadius, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
-    // Interpolate target toward Earth when zooming in, toward origin when zooming out
-    var t = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
-    cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos, t);
+    if (isGeocentric) {
+      // Geocentric: always zoom toward origin (Earth center)
+      cameraState.target.set(0, 0, 0);
+    } else {
+      // Heliocentric: interpolate toward Earth
+      var earthWorldPos = new THREE.Vector3();
+      earthMesh.getWorldPosition(earthWorldPos);
+      var t = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
+      cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos, t);
+    }
     cameraState.spherical.radius = newRadius;
     updateCameraFromSpherical();
   }, { passive: false });
@@ -539,14 +678,18 @@
       cameraState.spherical.phi -= dy * ROTATE_SPEED;
       updateCameraFromSpherical();
     } else if (e.touches.length === 2) {
-      // Pinch zoom (toward Earth)
+      // Pinch zoom
       var dist = getTouchDistance(e.touches[0], e.touches[1]);
       var scale = cameraState.pinchStartDist / dist;
       var newRadius = THREE.MathUtils.clamp(cameraState.pinchStartRadius * scale, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
-      var earthWorldPos2 = new THREE.Vector3();
-      earthMesh.getWorldPosition(earthWorldPos2);
-      var t2 = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
-      cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos2, t2);
+      if (isGeocentric) {
+        cameraState.target.set(0, 0, 0);
+      } else {
+        var earthWorldPos2 = new THREE.Vector3();
+        earthMesh.getWorldPosition(earthWorldPos2);
+        var t2 = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
+        cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos2, t2);
+      }
       cameraState.spherical.radius = newRadius;
       // Pan
       var center = getTouchCenter(e.touches[0], e.touches[1]);
@@ -596,25 +739,32 @@
     requestAnimationFrame(animate);
     var dt = clock.getDelta();
 
-    // Orbit (counter-clockwise from above = positive Y rotation)
-    if (!orbitPaused) {
-      orbitPivot.rotation.y += ORBIT_SPEED * dt;
-    }
-
-    // Self-rotation (always runs)
-    earthMesh.rotation.y += ROTATION_SPEED * dt;
-
-    // LOD: check camera distance to Earth
-    var earthWorldPos = new THREE.Vector3();
-    earthMesh.getWorldPosition(earthWorldPos);
-    var distToEarth = camera.position.distanceTo(earthWorldPos);
-
-    if (distToEarth < ZOOM_THRESHOLD) {
-      gridGroupFar.visible = false;
-      gridGroupNear.visible = true;
+    if (isGeocentric) {
+      // Geocentric: sun orbits, equatorial grid rotates
+      if (!orbitPaused) {
+        geoSunPivot.rotation.y += ORBIT_SPEED * dt;
+        geoEquatorialGrid.rotation.y += GEO_GRID_SPEED * dt;
+      }
     } else {
-      gridGroupFar.visible = true;
-      gridGroupNear.visible = false;
+      // Heliocentric: earth orbits sun
+      if (!orbitPaused) {
+        orbitPivot.rotation.y += ORBIT_SPEED * dt;
+      }
+      // Self-rotation (always runs)
+      earthMesh.rotation.y += ROTATION_SPEED * dt;
+
+      // LOD: check camera distance to Earth
+      var earthWorldPos = new THREE.Vector3();
+      earthMesh.getWorldPosition(earthWorldPos);
+      var distToEarth = camera.position.distanceTo(earthWorldPos);
+
+      if (distToEarth < ZOOM_THRESHOLD) {
+        gridGroupFar.visible = false;
+        gridGroupNear.visible = true;
+      } else {
+        gridGroupFar.visible = true;
+        gridGroupNear.visible = false;
+      }
     }
 
     renderer.render(scene, camera);

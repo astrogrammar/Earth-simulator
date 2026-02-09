@@ -7,6 +7,11 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <div id="toggle-wrap">
+    <span class="toggle-label" id="label-geo">天動</span>
+    <button id="toggle-btn" aria-label="Toggle geocentric / heliocentric"><span class="thumb"></span></button>
+    <span class="toggle-label active" id="label-helio">地動</span>
+  </div>
   <canvas id="canvas"></canvas>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="main.js"></script>
