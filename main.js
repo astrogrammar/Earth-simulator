@@ -421,9 +421,8 @@
   geoGroup.visible = false;
   scene.add(geoGroup);
 
-  // --- Geocentric Earth (static at origin) ---
+  // --- Geocentric Earth (upright, no tilt) ---
   var geoTiltGroup = new THREE.Object3D();
-  geoTiltGroup.rotation.z = AXIAL_TILT;
   geoGroup.add(geoTiltGroup);
 
   var geoEarthMesh = new THREE.Mesh(earthGeom, earthMat);
@@ -448,9 +447,14 @@
     geoContinentGroup.add(new THREE.Line(geom, continentMaterial));
   });
 
-  // --- Geocentric Sun (orbits around origin) ---
+  // --- Geocentric ecliptic plane (tilted 23.4° relative to equator) ---
+  var geoEclipticTilt = new THREE.Object3D();
+  geoEclipticTilt.rotation.z = AXIAL_TILT;
+  geoGroup.add(geoEclipticTilt);
+
+  // --- Geocentric Sun (orbits on tilted ecliptic) ---
   var geoSunPivot = new THREE.Object3D();
-  geoGroup.add(geoSunPivot);
+  geoEclipticTilt.add(geoSunPivot);
 
   var geoSunMesh = new THREE.Mesh(sunGeom, sunMat);
   geoSunMesh.position.set(ORBIT_RADIUS, 0, 0);
@@ -469,7 +473,7 @@
     color: LINE_COLOR_YELLOW,
     linewidth: ECLIPTIC_LINE_WIDTH
   });
-  geoGroup.add(new THREE.Line(orbitLineGeom, geoOrbitMat));
+  geoEclipticTilt.add(new THREE.Line(orbitLineGeom, geoOrbitMat));
 
   // --- Equatorial coordinate grid (rotates around Earth) ---
   var geoEquatorialGrid = new THREE.Object3D();
