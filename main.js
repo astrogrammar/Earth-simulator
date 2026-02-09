@@ -4,12 +4,12 @@
   // ============================================================
   // Constants
   // ============================================================
-  var SUN_RADIUS = 8;
+  var SUN_RADIUS = 2;          // same size as Earth
   var EARTH_RADIUS = 2;
   var ORBIT_RADIUS = 40;
   var AXIAL_TILT = THREE.MathUtils.degToRad(23.4);
-  var ORBIT_SPEED = 0.1;       // radians per second
-  var ROTATION_SPEED = 0.8;    // radians per second (self-rotation)
+  var ORBIT_SPEED = 0.03;      // radians per second (30% of original 0.1)
+  var ROTATION_SPEED = (2 * Math.PI) / 5; // 1 revolution per 5 seconds
   var LAT_LON_INTERVAL_FAR = 30;
   var LAT_LON_INTERVAL_NEAR = 10;
   var ZOOM_THRESHOLD = 20;     // camera-to-earth distance for LOD switch
@@ -23,8 +23,9 @@
   var ECLIPTIC_LINE_WIDTH = 1;
   var ORBIT_COLOR = 0xffffff;
   var EARTH_COLOR = 0x1144aa;
-  var SUN_COLOR_CENTER = 0xffcc00;
-  var SUN_GLOW_COLOR = 0xff8800;
+  var SUN_COLOR_CENTER = 0xffffff;   // white core
+  var SUN_GLOW_COLOR = 0xffcc00;    // yellow glow
+  var AXIS_LENGTH = EARTH_RADIUS * 1.8;  // pole axis extends beyond surface
   var CONTINENT_COLOR = 0x33aa44;
   var PAN_SPEED = 0.003;
   var ROTATE_SPEED = 0.005;
@@ -167,6 +168,17 @@
   });
   var earthMesh = new THREE.Mesh(earthGeom, earthMat);
   tiltGroup.add(earthMesh);
+
+  // ============================================================
+  // Earth axis line (through poles, extending beyond surface)
+  // ============================================================
+  var axisPoints = [
+    new THREE.Vector3(0, -AXIS_LENGTH, 0),
+    new THREE.Vector3(0, AXIS_LENGTH, 0)
+  ];
+  var axisGeom = new THREE.BufferGeometry().setFromPoints(axisPoints);
+  var axisMat = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1 });
+  tiltGroup.add(new THREE.Line(axisGeom, axisMat));
 
   // ============================================================
   // Continent outlines on Earth
@@ -459,11 +471,29 @@
 
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
-    cameraState.spherical.radius *= (1 + e.deltaY * 0.001);
+    var earthWorldPos = new THREE.Vector3();
+    earthMesh.getWorldPosition(earthWorldPos);
+    // Smoothly shift target toward Earth as we zoom in
+    var zoomFactor = 1 + e.deltaY * 0.001;
+    var newRadius = cameraState.spherical.radius * zoomFactor;
+    newRadius = THREE.MathUtils.clamp(newRadius, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+    // Interpolate target toward Earth when zooming in, toward origin when zooming out
+    var t = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
+    cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos, t);
+    cameraState.spherical.radius = newRadius;
     updateCameraFromSpherical();
   }, { passive: false });
 
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+
+  // --- Spacebar: toggle orbit pause/resume ---
+  var orbitPaused = false;
+  window.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') {
+      e.preventDefault();
+      orbitPaused = !orbitPaused;
+    }
+  });
 
   // --- Touch events ---
   function getTouchDistance(t1, t2) {
@@ -509,10 +539,15 @@
       cameraState.spherical.phi -= dy * ROTATE_SPEED;
       updateCameraFromSpherical();
     } else if (e.touches.length === 2) {
-      // Pinch zoom
+      // Pinch zoom (toward Earth)
       var dist = getTouchDistance(e.touches[0], e.touches[1]);
       var scale = cameraState.pinchStartDist / dist;
-      cameraState.spherical.radius = cameraState.pinchStartRadius * scale;
+      var newRadius = THREE.MathUtils.clamp(cameraState.pinchStartRadius * scale, CAMERA_MIN_DISTANCE, CAMERA_MAX_DISTANCE);
+      var earthWorldPos2 = new THREE.Vector3();
+      earthMesh.getWorldPosition(earthWorldPos2);
+      var t2 = 1 - THREE.MathUtils.clamp((newRadius - CAMERA_MIN_DISTANCE) / (CAMERA_INITIAL_DISTANCE - CAMERA_MIN_DISTANCE), 0, 1);
+      cameraState.target.lerpVectors(new THREE.Vector3(0, 0, 0), earthWorldPos2, t2);
+      cameraState.spherical.radius = newRadius;
       // Pan
       var center = getTouchCenter(e.touches[0], e.touches[1]);
       var pdx = center.x - cameraState.previousMouse.x;
@@ -562,9 +597,11 @@
     var dt = clock.getDelta();
 
     // Orbit (counter-clockwise from above = positive Y rotation)
-    orbitPivot.rotation.y += ORBIT_SPEED * dt;
+    if (!orbitPaused) {
+      orbitPivot.rotation.y += ORBIT_SPEED * dt;
+    }
 
-    // Self-rotation
+    // Self-rotation (always runs)
     earthMesh.rotation.y += ROTATION_SPEED * dt;
 
     // LOD: check camera distance to Earth
