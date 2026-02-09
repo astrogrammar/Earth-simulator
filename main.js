@@ -28,7 +28,7 @@
   var AXIS_LENGTH = EARTH_RADIUS * 1.8;  // pole axis extends beyond surface
   var CONTINENT_COLOR = 0x33aa44;
   var GEO_GRID_SPEED = (2 * Math.PI) / 60; // equatorial grid: 60s per revolution
-  var GEO_GRID_RADIUS = ORBIT_RADIUS * 0.55; // radius of celestial equatorial grid
+  var GEO_GRID_RADIUS = ORBIT_RADIUS; // same radius as sun's orbit
   var PAN_SPEED = 0.003;
   var ROTATE_SPEED = 0.005;
 
